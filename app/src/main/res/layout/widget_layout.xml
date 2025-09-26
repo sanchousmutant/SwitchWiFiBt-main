@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:padding="8dp"
+    android:gravity="center">
+
+    <ImageButton
+        android:id="@+id/wifi_button"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:contentDescription="Wi-Fi"
+        android:rotationX="3"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_wifi" />
+
+    <ImageButton
+        android:id="@+id/bluetooth_button"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:src="@drawable/ic_bluetooth"
+        android:scaleType="fitCenter"
+        android:contentDescription="Bluetooth" />
+
+</LinearLayout> 

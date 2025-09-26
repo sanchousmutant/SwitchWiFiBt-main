@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Значок кнопки, созданный на основе изображения глобуса с гаечным ключом.
+     Использует векторный формат Android для масштабируемости. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="256dp"
+    android:height="256dp"
+    android:viewportWidth="256"
+    android:viewportHeight="256">
+
+    <!-- Глобус -->
+    <path
+        android:fillColor="#6A5ACD"
+        android:pathData="M128,128 m -80,0 a 80,80 0,1,0 160,0 a 80,80 0,1,0 -160,0" />
+
+    <!-- Линии сетки на глобусе -->
+    <group
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="6">
+        <!-- Экватор -->
+        <path android:pathData="M48,128 L208,128" />
+        <!-- Горизонтальные линии (параллели) -->
+        <path android:pathData="M60,88 A60,40 0,1,0,196,88" />
+        <path android:pathData="M60,168 A60,40 0,1,0,196,168" />
+        <!-- Вертикальные линии (меридианы) -->
+        <path android:pathData="M128,48 L128,208" />
+        <path android:pathData="M88,58 L88,198" />
+        <path android:pathData="M168,58 L168,198" />
+    </group>
+
+    <!-- Гаечный ключ -->
+    <path
+        android:fillColor="#6A5ACD"
+        android:pathData="M50,200 L210,200 L210,220 L50,220 L20,230 L20,190 Z" />
+
+</vector>
