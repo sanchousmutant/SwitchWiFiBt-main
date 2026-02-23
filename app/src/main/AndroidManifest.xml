@@ -28,8 +28,8 @@
         <activity
             android:name=".DeviceListActivity"
             android:exported="false"
-            android:label="Сопряженные устройства"
-            android:theme="@style/Theme.AppCompat.DayNight.Dialog" />
+            android:label="Bluetooth"
+            android:theme="@style/Theme.Panel" />
 
         <receiver
             android:name=".NetworkWidgetProvider"

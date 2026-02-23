@@ -12,7 +12,6 @@
         android:layout_height="match_parent"
         android:layout_weight="1"
         android:contentDescription="Wi-Fi"
-        android:rotationX="3"
         android:scaleType="fitCenter"
         android:src="@drawable/ic_wifi" />
 

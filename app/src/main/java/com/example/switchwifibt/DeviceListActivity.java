@@ -15,11 +15,17 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.view.View;
 import android.widget.AdapterView;
+import android.widget.Button;
+import android.widget.ImageButton;
 import android.widget.ListView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+
+import com.google.android.material.switchmaterial.SwitchMaterial;
+
+import java.io.DataOutputStream;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -27,6 +33,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class DeviceListActivity extends AppCompatActivity {
 
@@ -37,6 +44,8 @@ public class DeviceListActivity extends AppCompatActivity {
     private ListView deviceListView;
     private BluetoothAdapter bluetoothAdapter;
     private BluetoothSocket socket;
+    private SwitchMaterial btSwitch;
+    private View listContainer;
 
     @SuppressLint("MissingPermission")
     @Override
@@ -48,12 +57,74 @@ public class DeviceListActivity extends AppCompatActivity {
         deviceList = new ArrayList<>();
 
         BluetoothManager bluetoothManager = getSystemService(BluetoothManager.class);
+        if (bluetoothManager == null) {
+            Toast.makeText(this, "Bluetooth не поддерживается", Toast.LENGTH_SHORT).show();
+            finish();
+            return;
+        }
         bluetoothAdapter = bluetoothManager.getAdapter();
+        if (bluetoothAdapter == null) {
+            Toast.makeText(this, "Bluetooth не поддерживается", Toast.LENGTH_SHORT).show();
+            finish();
+            return;
+        }
 
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
             finish();
             return;
         }
+
+        // Кнопка "Готово"
+        Button btnDone = findViewById(R.id.btn_done);
+        btnDone.setOnClickListener(v -> finish());
+
+        // Кнопка настроек BT
+        ImageButton btnSettings = findViewById(R.id.btn_settings);
+        btnSettings.setOnClickListener(v -> {
+            Intent intent = new Intent(Settings.ACTION_BLUETOOTH_SETTINGS);
+            startActivity(intent);
+        });
+
+        // Закрытие при нажатии на затемнённый фон
+        findViewById(R.id.panel_overlay).setOnClickListener(v -> finish());
+
+        // Переключатель Bluetooth
+        btSwitch = findViewById(R.id.bt_switch);
+        btSwitch.setChecked(bluetoothAdapter.isEnabled());
+        updateListVisibility(bluetoothAdapter.isEnabled());
+
+        btSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (isChecked == bluetoothAdapter.isEnabled()) return;
+
+            btSwitch.setEnabled(false);
+            new Thread(() -> {
+                String cmd = isChecked ? "svc bluetooth enable" : "svc bluetooth disable";
+                boolean rootSuccess = executeRootCommand(cmd);
+                runOnUiThread(() -> {
+                    if (rootSuccess) {
+                        // Ждём пока адаптер переключится
+                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                            btSwitch.setEnabled(true);
+                            updateListVisibility(isChecked);
+                            if (isChecked) {
+                                populateDeviceList();
+                                getActiveDevice();
+                            } else {
+                                deviceList.clear();
+                                if (deviceListAdapter != null) {
+                                    deviceListAdapter.notifyDataSetChanged();
+                                }
+                            }
+                        }, 1000);
+                    } else {
+                        // Нет root — откатываем Switch
+                        btSwitch.setChecked(!isChecked);
+                        btSwitch.setEnabled(true);
+                        Toast.makeText(DeviceListActivity.this, "Нет root-доступа", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }).start();
+        });
 
         populateDeviceList();
         getActiveDevice();
@@ -65,13 +136,11 @@ public class DeviceListActivity extends AppCompatActivity {
 
                 BluetoothDevice device = deviceList.get(position);
 
-                // Если нажато уже активное устройство
                 if (device.getAddress().equals(activeDeviceAddress)) {
                     disconnectFromDevice();
                     return;
                 }
-                
-                // Если есть другое активное соединение, сначала отключаемся
+
                 if (socket != null && socket.isConnected()) {
                     try {
                         socket.close();
@@ -85,42 +154,46 @@ public class DeviceListActivity extends AppCompatActivity {
 
                 new Thread(() -> {
                     BluetoothSocket[] tempSocketHolder = new BluetoothSocket[1];
+                    AtomicBoolean timedOut = new AtomicBoolean(false);
                     try {
                         tempSocketHolder[0] = device.createRfcommSocketToServiceRecord(MY_UUID);
-                        // Set a 10-second timeout for connection
                         Handler timeoutHandler = new Handler(Looper.getMainLooper());
                         Runnable timeoutRunnable = () -> {
-                            try {
-                                if (tempSocketHolder[0] != null && !tempSocketHolder[0].isConnected()) {
-                                    tempSocketHolder[0].close();
-                                }
-                            } catch (IOException ignored) {}
-                            runOnUiThread(() -> {
+                            if (timedOut.compareAndSet(false, true)) {
+                                try {
+                                    if (tempSocketHolder[0] != null) {
+                                        tempSocketHolder[0].close();
+                                    }
+                                } catch (IOException ignored) {}
                                 Toast.makeText(DeviceListActivity.this, "Превышено время ожидания подключения", Toast.LENGTH_SHORT).show();
                                 deviceListAdapter.setConnectingPosition(-1);
                                 deviceListView.setEnabled(true);
-                            });
+                            }
                         };
                         timeoutHandler.postDelayed(timeoutRunnable, TimeUnit.SECONDS.toMillis(10));
 
                         tempSocketHolder[0].connect();
-                        timeoutHandler.removeCallbacks(timeoutRunnable); // Cancel timeout if connected
+                        timeoutHandler.removeCallbacks(timeoutRunnable);
 
-                        runOnUiThread(() -> {
-                            socket = tempSocketHolder[0];
-                            activeDeviceAddress = device.getAddress();
-                            Toast.makeText(DeviceListActivity.this, "Подключено к " + device.getName(), Toast.LENGTH_SHORT).show();
-                            deviceListAdapter.setActiveDeviceAddress(activeDeviceAddress);
-                            deviceListAdapter.setConnectingPosition(-1);
-                            deviceListView.setEnabled(true);
-                        });
+                        if (!timedOut.get()) {
+                            runOnUiThread(() -> {
+                                socket = tempSocketHolder[0];
+                                activeDeviceAddress = device.getAddress();
+                                Toast.makeText(DeviceListActivity.this, "Подключено к " + device.getName(), Toast.LENGTH_SHORT).show();
+                                deviceListAdapter.setActiveDeviceAddress(activeDeviceAddress);
+                                deviceListAdapter.setConnectingPosition(-1);
+                                deviceListView.setEnabled(true);
+                            });
+                        }
                     } catch (IOException e) {
                         e.printStackTrace();
-                        runOnUiThread(() -> {
-                            Toast.makeText(DeviceListActivity.this, "Не удалось подключиться: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                            deviceListAdapter.setConnectingPosition(-1);
-                            deviceListView.setEnabled(true);
-                        });
+                        if (!timedOut.get()) {
+                            runOnUiThread(() -> {
+                                Toast.makeText(DeviceListActivity.this, "Не удалось подключиться: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                                deviceListAdapter.setConnectingPosition(-1);
+                                deviceListView.setEnabled(true);
+                            });
+                        }
                         if (tempSocketHolder[0] != null) {
                             try {
                                 tempSocketHolder[0].close();
@@ -144,13 +217,7 @@ public class DeviceListActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        try {
-            if (socket != null) {
-                socket.close();
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        socket = null;
     }
 
     private void disconnectFromDevice() {
@@ -173,8 +240,7 @@ public class DeviceListActivity extends AppCompatActivity {
         deviceList.addAll(pairedDevices);
 
         if (deviceList.isEmpty()) {
-            // Handle no devices case if necessary, e.g., show a message
-            finish(); // Or just close if there's nothing to show
+            finish();
         } else {
             deviceListAdapter = new DeviceListAdapter(this, deviceList);
             deviceListView.setAdapter(deviceListAdapter);
@@ -188,7 +254,6 @@ public class DeviceListActivity extends AppCompatActivity {
             public void onServiceConnected(int profile, BluetoothProfile proxy) {
                 List<BluetoothDevice> connectedDevices = proxy.getConnectedDevices();
                 if (!connectedDevices.isEmpty()) {
-                    // Assuming one active device for simplicity
                     activeDeviceAddress = connectedDevices.get(0).getAddress();
                     deviceListAdapter.setActiveDeviceAddress(activeDeviceAddress);
                 }
@@ -198,6 +263,24 @@ public class DeviceListActivity extends AppCompatActivity {
             @Override
             public void onServiceDisconnected(int profile) {
             }
-        }, BluetoothProfile.HEADSET); // You can check other profiles like A2DP
+        }, BluetoothProfile.HEADSET);
+    }
+
+    private void updateListVisibility(boolean btEnabled) {
+        deviceListView.setVisibility(btEnabled ? View.VISIBLE : View.GONE);
+    }
+
+    private boolean executeRootCommand(String command) {
+        try {
+            Process process = Runtime.getRuntime().exec("su");
+            DataOutputStream os = new DataOutputStream(process.getOutputStream());
+            os.writeBytes(command + "\n");
+            os.writeBytes("exit\n");
+            os.flush();
+            int exitCode = process.waitFor();
+            return exitCode == 0;
+        } catch (Exception e) {
+            return false;
+        }
     }
 }
